@@ -1,0 +1,97 @@
+name: Development
+
+on:
+  workflow_dispatch:
+
+jobs:
+  dev:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            openssh-server \
+            git bc bison build-essential curl flex g++-multilib \
+            gcc-multilib libssl-dev libelf-dev libncurses5-dev \
+            libncurses-dev python3 unzip zip rsync ccache \
+            lz4 zstd
+
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_CLIENT_SECRET }}
+          tags: tag:github
+
+      - name: Configure OpenSSH
+        run: |
+          sudo mkdir -p /home/runner/.ssh
+          echo "${{ secrets.SSH_PUBLIC_KEY }}" | sudo tee /home/runner/.ssh/authorized_keys >/dev/null
+
+          sudo chown -R runner:runner /home/runner/.ssh
+          sudo chmod 700 /home/runner/.ssh
+          sudo chmod 600 /home/runner/.ssh/authorized_keys
+
+          sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+          sudo sed -i 's/^#*PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+
+          if ! grep -q "^PubkeyAuthentication" /etc/ssh/sshd_config; then
+            echo "PubkeyAuthentication yes" | sudo tee -a /etc/ssh/sshd_config
+          fi
+
+          sudo systemctl enable ssh
+          sudo systemctl restart ssh
+
+      - name: Install code-server
+        run: |
+          curl -fsSL https://code-server.dev/install.sh | sh
+
+      - name: Start code-server
+        run: |
+          mkdir -p ~/.config/code-server
+
+          cat > ~/.config/code-server/config.yaml <<EOF
+          bind-addr: 0.0.0.0:8080
+          auth: none
+          cert: false
+          EOF
+
+          nohup code-server \
+            /home/runner/work/${{ github.event.repository.name }}/${{ github.event.repository.name }} \
+            > code-server.log 2>&1 &
+
+      - name: Show Connection Info
+        run: |
+          echo "======================================"
+          echo "User     : runner"
+          echo "Hostname : $(hostname)"
+          echo "Tailscale IP : $(tailscale ip -4)"
+          echo "SSH      : ssh runner@$(tailscale ip -4)"
+          echo "VS Code  : http://$(tailscale ip -4):8080"
+          echo "======================================"
+
+      - name: Keep Runner Alive
+        run: |
+          echo "Menunggu koneksi SSH pertama masuk..."
+          
+          # 1. Tunggu sampai Anda berhasil login pertama kali via SSH
+          # Sesi akan dicek setiap 10 detik.
+          while ! who | grep -q "runner"; do
+            sleep 10
+          done
+          
+          echo "Koneksi SSH terdeteksi! Memulai pemantauan sesi..."
+
+          # 2. Setelah login berhasil, cek secara berkala.
+          # Jika Anda disconnect (tidak ada lagi user 'runner' yang aktif di terminal), loop akan selesai.
+          while who | grep -q "runner"; do
+            sleep 15
+          done
+
+          echo "Terminal SSH terputus/disconnected. Menghentikan workflow..."
