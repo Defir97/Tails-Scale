@@ -15,6 +15,7 @@ jobs:
       - name: Install Build Dependencies
         run: |
           sudo apt-get update
+          sudo timedatectl set-timezone Asia/Jakarta
           sudo apt-get install -y \
             openssh-server \
             git bc bison build-essential curl flex g++-multilib \
