@@ -58,6 +58,13 @@ jobs:
         run: |
           curl -fsSL https://code-server.dev/install.sh | sh
 
+      - name: Install VS Code Extensions
+        run: |
+          code-server --install-extension GitHub.copilot
+          code-server --install-extension GitHub.copilot-chat
+          code-server --install-extension saoudrizwan.claude-dev || true
+          code-server --install-extension RooVeterinaryInc.roo-cline || true
+          
       - name: Start code-server
         run: |
           mkdir -p ~/.config/code-server
